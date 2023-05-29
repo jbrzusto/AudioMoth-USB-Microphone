@@ -125,7 +125,7 @@ typedef struct {
     uint8_t sampleRateDivider;
     uint16_t lowerFilterFreq;
     uint16_t higherFilterFreq;
-    uint8_t serialNumber[USB_SERIAL_NUMBER_LENGTH];
+    uint8_t serialNumber[USB_SERIAL_NUMBER_LENGTH + 1];
     uint8_t enableEnergySaverMode : 1;
     uint8_t disable48HzDCBlockingFilter : 1;
     uint8_t enableLowGainRange : 1;
@@ -144,7 +144,7 @@ static configSettings_t defaultConfigSettings = {
     .sampleRateDivider = 1,
     .lowerFilterFreq = 0,
     .higherFilterFreq = 0,
-    .serialNumber = {0},
+    .serialNumber = {0, 0, 0, 0, 0},
     .enableEnergySaverMode = 0,
     .disable48HzDCBlockingFilter = 0,
     .enableLowGainRange = 0,
