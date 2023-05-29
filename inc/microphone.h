@@ -87,7 +87,7 @@ static uint8_t configDesc[] __attribute__ ((aligned(4)))= {
     0,                                          /* iInterface                          */
 
     /* Class-specific AC Interface Header descriptor */
-  
+
     USB_AC_INT_HEADER_DESCSIZE,                 /* bLength                             */
     USB_CS_INTERFACE_DESCRIPTOR,                /* bDescriptorType                     */
     USB_CA_HEADER_DESCRIPTOR,                   /* bDescriptorSubtype                  */
@@ -98,7 +98,7 @@ static uint8_t configDesc[] __attribute__ ((aligned(4)))= {
     1,                                          /* baInterfaceNr                       */
 
     /** Input Terminal ID1 descriptor */
-  
+
     USB_CA_INPUT_TERMINAL_DESCSIZE,             /* bLength                             */
     USB_CS_INTERFACE_DESCRIPTOR,                /* bDescriptorType                     */
     USB_CA_INPUT_TERMINAL_DESCRIPTOR,           /* bDescriptorSubtype                  */
@@ -111,7 +111,7 @@ static uint8_t configDesc[] __attribute__ ((aligned(4)))= {
     0,                                          /* iTerminal                           */
 
     /* Feature Unit ID2 descriptor */
-  
+
     USB_FEATURE_UNIT_DESCSIZE,                  /* bLength                             */
     USB_CS_INTERFACE_DESCRIPTOR,                /* bDescriptorType                     */
     USB_CA_FEATURE_UNIT_DESCRIPTOR,             /* bDescriptorSubtype                  */
@@ -122,7 +122,7 @@ static uint8_t configDesc[] __attribute__ ((aligned(4)))= {
     0,                                          /* iFeature                            */
 
     /* Output Terminal ID3 descriptor */
-  
+
     USB_CA_OUTPUT_TERMINAL_DESCSIZE,            /* bLength                             */
     USB_CS_INTERFACE_DESCRIPTOR,                /* bDescriptorType                     */
     USB_CA_OUTPUT_TERMINAL_DESCRIPTOR,          /* bDescriptorSubtype                  */
@@ -145,7 +145,7 @@ static uint8_t configDesc[] __attribute__ ((aligned(4)))= {
     0,                                          /* iInterface                          */
 
     /* Alternate setting 1 (operational stream) */
-  
+
     USB_INTERFACE_DESCSIZE,                     /* bLength                             */
     USB_INTERFACE_DESCRIPTOR,                   /* bDescriptorType                     */
     1,                                          /* bInterfaceNumber                    */
@@ -157,7 +157,7 @@ static uint8_t configDesc[] __attribute__ ((aligned(4)))= {
     0,                                          /* iInterface                          */
 
     /* Class-specific AS General Interface descriptor */
-  
+
     USB_CA_AS_GENERAL_DESCSIZE,                 /* bLength                             */
     USB_CS_INTERFACE_DESCRIPTOR,                /* bDescriptorType                     */
     USB_CA_AS_GENERAL_DESCRIPTOR,               /* bDescriptorSubtype                  */
@@ -166,7 +166,7 @@ static uint8_t configDesc[] __attribute__ ((aligned(4)))= {
     0x01, 0x00,                                 /* wFormatTag (PCM)                    */
 
     /* Mono Type I Format interface descriptor */
-  
+
     USB_MONO_FORMAT_DESCSIZE,                   /* bLength                             */
     USB_CS_INTERFACE_DESCRIPTOR,                /* bDescriptorType                     */
     USB_CA_FORMAT_TYPE_DESCRIPTOR,              /* bDescriptorSubtype                  */
@@ -252,5 +252,3 @@ static const USBD_Init_TypeDef initstruct = {
 };
 
 #endif /* __MICROPHONE_H */
-
-

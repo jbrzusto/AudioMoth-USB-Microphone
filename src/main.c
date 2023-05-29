@@ -125,7 +125,8 @@ typedef struct {
     uint8_t sampleRateDivider;
     uint16_t lowerFilterFreq;
     uint16_t higherFilterFreq;
-    uint8_t enableEnergySaverMode : 1; 
+    uint8_t serialNumber[USB_SERIAL_NUMBER_LENGTH];
+    uint8_t enableEnergySaverMode : 1;
     uint8_t disable48HzDCBlockingFilter : 1;
     uint8_t enableLowGainRange : 1;
     uint8_t disableLED : 1;
@@ -143,6 +144,7 @@ static configSettings_t defaultConfigSettings = {
     .sampleRateDivider = 1,
     .lowerFilterFreq = 0,
     .higherFilterFreq = 0,
+    .serialNumber = {0},
     .enableEnergySaverMode = 0,
     .disable48HzDCBlockingFilter = 0,
     .enableLowGainRange = 0,
@@ -233,9 +235,11 @@ static uint8_t sineBuffer[MAXIMUM_NUMBER_OF_BYTES_IN_BUFFER * NUMBER_OF_SINE_BUF
 
 /* Firmware version and description */
 
-static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 2, 0};
+static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 2, 1};
 
 static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "AudioMoth-USB-Microphone";
+
+static bool needSerialNumberInit;
 
 /* Function prototypes */
 
@@ -285,11 +289,11 @@ static void setUpMicrophone(bool useDefaultSetting) {
 
     /* Update USB device release and serial number */
 
-    for (uint32_t i = 0; i < USB_STRING_DESCRIPTOR_SIZE; i += 1) serialDescriptor[i] = 0;
+    /* for (uint32_t i = 0; i < USB_STRING_DESCRIPTOR_SIZE; i += 1) serialDescriptor[i] = 0; */
 
-    serialDescriptor[0] = CHAR16_SIZE_IN_BYTES * USB_SERIAL_NUMBER_LENGTH + CHAR16_SIZE_IN_BYTES;
+    /* serialDescriptor[0] = CHAR16_SIZE_IN_BYTES * USB_SERIAL_NUMBER_LENGTH + CHAR16_SIZE_IN_BYTES; */
 
-    serialDescriptor[1] = USB_STRING_DESCRIPTOR;
+    /* serialDescriptor[1] = USB_STRING_DESCRIPTOR; */
 
     uint32_t sampleRate = effectiveSampleRate / HERTZ_IN_KILOHERTZ;
 
@@ -299,7 +303,7 @@ static void setUpMicrophone(bool useDefaultSetting) {
 
         uint32_t digit = sampleRate % 10;
 
-        serialDescriptor[USB_STRING_DESCRIPTOR_OFFSET + 2 * (USB_SERIAL_NUMBER_LENGTH - i - 1)] = '0' + digit;
+        //        serialDescriptor[USB_STRING_DESCRIPTOR_OFFSET + 2 * i] = configSettings->serialNumber[i];
 
         deviceDesc.bcdDevice |= digit << (BITS_PER_BCD_DIGIT * i);
 
@@ -309,11 +313,36 @@ static void setUpMicrophone(bool useDefaultSetting) {
 
     strings[USB_SERIAL_STRING_DESCRIPTOR_INDEX] = serialDescriptor;
 
+    /* Update USB string descriptor for serial number */
+
+    if (needSerialNumberInit) {
+    /* Fill in default serial number as tail of unique ID in hex */
+        uint8_t *uid = ((uint8_t *)AM_UNIQUE_ID_START_ADDRESS) + (USB_SERIAL_NUMBER_LENGTH - 1) / 2;
+        for (int i = 0; i < USB_SERIAL_NUMBER_LENGTH; i += 2, --uid) {
+            configSettings->serialNumber[i] = '0' + ((*uid) >> 4);
+            if (i + 1 < USB_SERIAL_NUMBER_LENGTH) {
+                configSettings->serialNumber[i+1] = '0' + ((*uid) & 0xf);
+            }
+        }
+        needSerialNumberInit = false;
+    }
+    char16_t *dst = (char16_t*)((char*)serialDescriptor + USB_STRING_DESCRIPTOR_OFFSET);
+    for (int i = 0; i < USB_SERIAL_NUMBER_LENGTH; i++) {
+      *dst++ = configSettings->serialNumber[i];
+    }
+    *dst = 0;
+
+    serialDescriptor[0] = CHAR16_SIZE_IN_BYTES * USB_SERIAL_NUMBER_LENGTH + CHAR16_SIZE_IN_BYTES;
+
+    serialDescriptor[1] = USB_STRING_DESCRIPTOR;
+
+    strings[USB_SERIAL_STRING_DESCRIPTOR_INDEX] = serialDescriptor;
+
     /* Update USB string descriptor for sample rate */
 
     for (uint32_t i = 0; i < USB_STRING_DESCRIPTOR_SIZE; i += 1) productDescriptor[i] = 0;
 
-    uint32_t length = sprintf((char*)productDescriptor + USB_STRING_DESCRIPTOR_OFFSET, "%lukHz AudioMoth USB Microphone", effectiveSampleRate / HERTZ_IN_KILOHERTZ);
+    uint32_t length = sprintf((char*)productDescriptor + USB_STRING_DESCRIPTOR_OFFSET, "%lukHz AudioMoth USB Mic %4s", effectiveSampleRate / HERTZ_IN_KILOHERTZ, configSettings->serialNumber);
 
     productDescriptor[0] = CHAR16_SIZE_IN_BYTES * length + CHAR16_SIZE_IN_BYTES;
 
@@ -321,7 +350,7 @@ static void setUpMicrophone(bool useDefaultSetting) {
 
     char* src = (char*)productDescriptor + USB_STRING_DESCRIPTOR_OFFSET;
 
-    char16_t* dst = (char16_t*)src;
+    dst = (char16_t*)src;
 
     for (uint32_t i = 0; i < length; i += 1) dst[length - 1 - i] = src[length - 1 - i];
 
@@ -375,7 +404,7 @@ static void setUpMicrophone(bool useDefaultSetting) {
 void startMicrophoneSamples(bool useDefaultSetting) {
 
     /* Initialise the counters */
-    
+
     readBuffer = 0;
 
     writeBuffer = NUMBER_OF_BUFFERS / 2;
@@ -404,13 +433,13 @@ inline void AudioMoth_handleSwitchInterrupt() { }
 
 inline void AudioMoth_handleMicrophoneInterrupt(int16_t sample) { }
 
-inline void AudioMoth_handleMicrophoneChangeInterrupt() { 
-    
-    microphoneChanged = true; 
-    
+inline void AudioMoth_handleMicrophoneChangeInterrupt() {
+
+    microphoneChanged = true;
+
 }
 
-inline void AudioMoth_handleDirectMemoryAccessInterrupt(bool isPrimaryBuffer, int16_t **nextBuffer) { 
+inline void AudioMoth_handleDirectMemoryAccessInterrupt(bool isPrimaryBuffer, int16_t **nextBuffer) {
 
     /* Update LED */
 
@@ -463,7 +492,7 @@ static void stateChange(USBD_State_TypeDef oldState, USBD_State_TypeDef newState
         USBD_Write(MICROPHONE_EP_IN, silentBuffer, numberOfSamplesInBuffer * NUMBER_OF_BYTES_IN_SAMPLE, dataSentCallback);
 
     } else if (oldState == USBD_STATE_CONFIGURED) {
-    
+
         USBD_AbortTransfer(MICROPHONE_EP_IN);
 
     }
@@ -479,59 +508,59 @@ static int setupCmd(const USB_Setup_TypeDef *setup) {
     if (setup->Type == USB_SETUP_TYPE_CLASS) {
 
         switch (setup->bRequest) {
-      
+
             case USB_AUDIO_GET_CUR:
-        
+
                 if (setup->Direction == USB_SETUP_DIR_IN && setup->Recipient == USB_SETUP_RECIPIENT_INTERFACE && setup->wLength == 1) {
 
                     if (setup->wIndex == 0x0200 && setup->wValue == 0x0100) {
-            
+
                         *buffer = microphoneMuted;
 
                         retVal = USBD_Write(0, buffer, setup->wLength, NULL);
-          
+
                     }
-        
+
                 }
-        
+
                 break;
 
             case USB_AUDIO_SET_CUR:
-        
+
                 if (setup->Direction == USB_SETUP_DIR_OUT && setup->Recipient == USB_SETUP_RECIPIENT_INTERFACE && setup->wLength == 1) {
-          
+
                     if (setup->wIndex == 0x0200 && setup->wValue == 0x0100) {
-            
+
                         retVal = USBD_Read(0, buffer, setup->wLength, muteSettingReceivedCallback);
-          
+
                     }
-        
+
                 }
-        
+
                 break;
-    
+
         }
-  
+
     } else if (setup->Type == USB_SETUP_TYPE_STANDARD) {
 
         if (setup->bRequest == SET_INTERFACE && setup->wIndex == 0x01 && setup->wLength == 0 && setup->Recipient == USB_SETUP_RECIPIENT_INTERFACE) {
-      
+
             if (setup->wValue == 0 || setup->wValue == 1) {
-            
+
                 microphoneAlternative = setup->wValue;
-    
+
                 retVal = USB_STATUS_OK;
 
             }
 
         } else if (setup->bRequest == GET_INTERFACE && setup->wValue == 0 && setup->wIndex == 0x01 && setup->wLength == 1 && setup->Recipient == USB_SETUP_RECIPIENT_INTERFACE) {
-      
+
             *buffer = (uint8_t)microphoneAlternative;
-      
+
             retVal = USBD_Write(0, buffer, 1, NULL);
 
         }
-        
+
     }
 
     return retVal;
@@ -565,7 +594,7 @@ int dataSentCallback(USB_Status_TypeDef status, uint32_t xferred, uint32_t remai
                 /* Generate additional spacer buffer by repeating the last sample sent */
 
                 for (uint32_t i = 0; i < numberOfSamplesInBuffer; i += 1) {
-                    
+
                     interpolationArray[i] = previousSample;
 
                 }
@@ -583,7 +612,7 @@ int dataSentCallback(USB_Status_TypeDef status, uint32_t xferred, uint32_t remai
                 float interpolatedValue = (float)previousSample + step;
 
                 for (uint32_t i = 0; i < numberOfSamplesInBuffer; i += 1) {
-                    
+
                     interpolationArray[i] = (int16_t)interpolatedValue;
 
                     interpolatedValue += step;
@@ -641,7 +670,7 @@ inline void AudioMoth_usbFirmwareDescriptionRequested(uint8_t **firmwareDescript
 
 }
 
-inline void AudioMoth_usbApplicationPacketRequested(uint32_t messageType, uint8_t *transmitBuffer, uint32_t size) { 
+inline void AudioMoth_usbApplicationPacketRequested(uint32_t messageType, uint8_t *transmitBuffer, uint32_t size) {
 
     memcpy(transmitBuffer + 1, configSettings, sizeof(configSettings_t));
 
@@ -673,7 +702,7 @@ inline void AudioMoth_usbApplicationPacketReceived(uint32_t messageType, uint8_t
 
         /* Copy the current configuration settings to the USB packet */
 
-        memcpy(transmitBuffer + 1, configSettings, sizeof(configSettings_t)); 
+        memcpy(transmitBuffer + 1, configSettings, sizeof(configSettings_t));
 
         /* Set the time */
 
@@ -704,7 +733,10 @@ int main(void) {
     if (memcmp(persistentConfigSettings->firmwareVersion, firmwareVersion, AM_FIRMWARE_VERSION_LENGTH) == 0 && memcmp(persistentConfigSettings->firmwareDescription, firmwareDescription, AM_FIRMWARE_DESCRIPTION_LENGTH) == 0) {
 
         memcpy(configSettings, &persistentConfigSettings->configSettings, sizeof(configSettings_t));
+        needSerialNumberInit = false;
 
+    } else {
+        needSerialNumberInit = true;
     }
 
     /* Read the switch state */
@@ -765,7 +797,7 @@ int main(void) {
 
         AudioMoth_startRealTimeClock(USB_EM2_RTC_WAKEUP_INTERVAL);
 
-        while (!cancel) { 
+        while (!cancel) {
 
             /* Check for switch change */
 
@@ -774,7 +806,7 @@ int main(void) {
             /* Check for USB switch change */
 
             usbCounter = currentSwitchPosition == AM_SWITCH_USB ? usbCounter + 1 : 0;
- 
+
             if (usbCounter > USB_DELAY_COUNT) {
 
                 cancel = true;
@@ -867,7 +899,7 @@ int main(void) {
             /* Enter low power standby if USB is unplugged */
 
             if (USBD_SafeToEnterEM2()) {
-                
+
                 /* Disable LED and microphone for deep sleep */
 
                 AudioMoth_setRedLED(false);
