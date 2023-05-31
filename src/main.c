@@ -125,11 +125,11 @@ typedef struct {
     uint8_t sampleRateDivider;
     uint16_t lowerFilterFreq;
     uint16_t higherFilterFreq;
-    uint8_t serialNumber[USB_SERIAL_NUMBER_LENGTH + 1];
     uint8_t enableEnergySaverMode : 1;
     uint8_t disable48HzDCBlockingFilter : 1;
     uint8_t enableLowGainRange : 1;
     uint8_t disableLED : 1;
+    uint32_t devid[2];
 } configSettings_t;
 
 #pragma pack(pop)
@@ -144,11 +144,11 @@ static configSettings_t defaultConfigSettings = {
     .sampleRateDivider = 1,
     .lowerFilterFreq = 0,
     .higherFilterFreq = 0,
-    .serialNumber = {0, 0, 0, 0, 0},
     .enableEnergySaverMode = 0,
     .disable48HzDCBlockingFilter = 0,
     .enableLowGainRange = 0,
-    .disableLED = 0
+    .disableLED = 0,
+    .devid = {0, 0}
 };
 
 configSettings_t *configSettings = &defaultConfigSettings;
@@ -239,8 +239,6 @@ static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 2, 1};
 
 static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "AudioMoth-USB-Microphone";
 
-static bool needSerialNumberInit;
-
 /* Function prototypes */
 
 int dataSentCallback(USB_Status_TypeDef status, uint32_t xferred, uint32_t remaining);
@@ -289,12 +287,6 @@ static void setUpMicrophone(bool useDefaultSetting) {
 
     /* Update USB device release and serial number */
 
-    /* for (uint32_t i = 0; i < USB_STRING_DESCRIPTOR_SIZE; i += 1) serialDescriptor[i] = 0; */
-
-    /* serialDescriptor[0] = CHAR16_SIZE_IN_BYTES * USB_SERIAL_NUMBER_LENGTH + CHAR16_SIZE_IN_BYTES; */
-
-    /* serialDescriptor[1] = USB_STRING_DESCRIPTOR; */
-
     uint32_t sampleRate = effectiveSampleRate / HERTZ_IN_KILOHERTZ;
 
     deviceDesc.bcdDevice = 0;
@@ -303,38 +295,30 @@ static void setUpMicrophone(bool useDefaultSetting) {
 
         uint32_t digit = sampleRate % 10;
 
-        //        serialDescriptor[USB_STRING_DESCRIPTOR_OFFSET + 2 * i] = configSettings->serialNumber[i];
-
         deviceDesc.bcdDevice |= digit << (BITS_PER_BCD_DIGIT * i);
 
         sampleRate = (sampleRate - digit) / 10;
 
     }
 
-    strings[USB_SERIAL_STRING_DESCRIPTOR_INDEX] = serialDescriptor;
-
     /* Update USB string descriptor for serial number */
 
-    if (needSerialNumberInit) {
-    /* Fill in default serial number as tail of unique ID in hex */
-        uint8_t *uid = ((uint8_t *)AM_UNIQUE_ID_START_ADDRESS) + (USB_SERIAL_NUMBER_LENGTH - 1) / 2;
-        for (int i = 0; i < USB_SERIAL_NUMBER_LENGTH; i += 2, --uid) {
-            configSettings->serialNumber[i] = '0' + ((*uid) >> 4);
-            if (i + 1 < USB_SERIAL_NUMBER_LENGTH) {
-                configSettings->serialNumber[i+1] = '0' + ((*uid) & 0xf);
-            }
-        }
-        needSerialNumberInit = false;
-    }
-    char16_t *dst = (char16_t*)((char*)serialDescriptor + USB_STRING_DESCRIPTOR_OFFSET);
-    for (int i = 0; i < USB_SERIAL_NUMBER_LENGTH; i++) {
-      *dst++ = configSettings->serialNumber[i];
-    }
-    *dst = 0;
+    for (uint32_t i = 0; i < USB_STRING_DESCRIPTOR_SIZE; i += 1) serialDescriptor[i] = 0;
 
-    serialDescriptor[0] = CHAR16_SIZE_IN_BYTES * USB_SERIAL_NUMBER_LENGTH + CHAR16_SIZE_IN_BYTES;
+    uint32_t *devid = (uint32_t *) AM_UNIQUE_ID_START_ADDRESS;
+    configSettings->devid[0] = *devid;
+    configSettings->devid[1] = *(devid+1);
+    char devidbuf[17];
+    sprintf(&devidbuf[0], "%08X%08X", (unsigned)configSettings->devid[1], (unsigned)configSettings->devid[0]);
+    serialDescriptor[0] = CHAR16_SIZE_IN_BYTES * (sizeof(devidbuf));
 
     serialDescriptor[1] = USB_STRING_DESCRIPTOR;
+
+    char* src = &devidbuf[0];
+    char16_t *dst = (char16_t*)((char*)serialDescriptor + USB_STRING_DESCRIPTOR_OFFSET);
+    uint32_t length = sizeof(devidbuf) - 1;
+
+    for (uint32_t i = 0; i < length; i += 1) dst[i] = src[i];
 
     strings[USB_SERIAL_STRING_DESCRIPTOR_INDEX] = serialDescriptor;
 
@@ -342,13 +326,13 @@ static void setUpMicrophone(bool useDefaultSetting) {
 
     for (uint32_t i = 0; i < USB_STRING_DESCRIPTOR_SIZE; i += 1) productDescriptor[i] = 0;
 
-    uint32_t length = sprintf((char*)productDescriptor + USB_STRING_DESCRIPTOR_OFFSET, "%lukHz AudioMoth USB Mic %4s", effectiveSampleRate / HERTZ_IN_KILOHERTZ, configSettings->serialNumber);
+    length = sprintf((char*)productDescriptor + USB_STRING_DESCRIPTOR_OFFSET, "%lukHz AMoth %s", effectiveSampleRate / HERTZ_IN_KILOHERTZ, devidbuf);
 
     productDescriptor[0] = CHAR16_SIZE_IN_BYTES * length + CHAR16_SIZE_IN_BYTES;
 
     productDescriptor[1] = USB_STRING_DESCRIPTOR;
 
-    char* src = (char*)productDescriptor + USB_STRING_DESCRIPTOR_OFFSET;
+    src = (char*)productDescriptor + USB_STRING_DESCRIPTOR_OFFSET;
 
     dst = (char16_t*)src;
 
@@ -688,6 +672,12 @@ inline void AudioMoth_usbApplicationPacketReceived(uint32_t messageType, uint8_t
 
     memcpy(&persistentConfigSettings.configSettings, receiveBuffer + 1,  sizeof(configSettings_t));
 
+    /* fix device id */
+    uint32_t *devid = (uint32_t *) AM_UNIQUE_ID_START_ADDRESS;
+    persistentConfigSettings.configSettings.devid[0] = *devid;
+    persistentConfigSettings.configSettings.devid[1] = *(devid+1);
+
+
     /* Copy persistent configuration settings to flash */
 
     uint32_t numberOfBytes = ROUND_UP_TO_MULTIPLE(sizeof(persistentConfigSettings_t), UINT32_SIZE_IN_BYTES);
@@ -733,11 +723,11 @@ int main(void) {
     if (memcmp(persistentConfigSettings->firmwareVersion, firmwareVersion, AM_FIRMWARE_VERSION_LENGTH) == 0 && memcmp(persistentConfigSettings->firmwareDescription, firmwareDescription, AM_FIRMWARE_DESCRIPTION_LENGTH) == 0) {
 
         memcpy(configSettings, &persistentConfigSettings->configSettings, sizeof(configSettings_t));
-        needSerialNumberInit = false;
 
-    } else {
-        needSerialNumberInit = true;
     }
+    uint32_t *devid = (uint32_t *) AM_UNIQUE_ID_START_ADDRESS;
+    configSettings->devid[0] = *devid;
+    configSettings->devid[1] = *(devid+1);
 
     /* Read the switch state */
 
